@@ -107,8 +107,26 @@ export async function fetchImageBlob(url: string, app?: App): Promise<Blob> {
         const relativePath = rawPath.replace(/^\/+/, "");
         const absolutePath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
         const adapter = app.vault.adapter;
+        /** app:// URLs use forward slashes (e.g. C:/...); Windows getBasePath() often uses backslashes — normalize before comparing */
+        const toPosix = (p: string) =>
+            p
+                .replace(/\\/g, "/")
+                .replace(/^\/+([A-Za-z]:\/)/, "$1")
+                .replace(/\/+$/, "");
         if (adapter instanceof FileSystemAdapter) {
             const basePath = adapter.getBasePath();
+            const basePosix = toPosix(basePath);
+            const fullPosix = toPosix(relativePath);
+            const baseLower = basePosix.toLowerCase();
+            const fullLower = fullPosix.toLowerCase();
+            if (fullLower === baseLower || fullLower.startsWith(baseLower + "/")) {
+                let relative = fullPosix.slice(basePosix.length).replace(/^\/+/, "");
+                const file = resolveVaultImageFile(app, relative);
+                if (file instanceof TFile) {
+                    const data = await app.vault.readBinary(file);
+                    return new Blob([data]);
+                }
+            }
             if (absolutePath.startsWith(basePath)) {
                 let relative = absolutePath.slice(basePath.length);
                 if (relative.startsWith("/") || relative.startsWith("\\")) {
